@@ -163,7 +163,7 @@ def extract_lab_from_section(section_text):
     elif "oc" in section_lower and "lv" in section_lower:
         return "LV + OC"
     else:
-        return "OC"
+        return "Unknown"
 
 def fetch_menu():
     soup = BeautifulSoup(requests.get(URL).text, "html.parser")
