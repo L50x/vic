@@ -7,7 +7,7 @@ import gspread
 from google.oauth2.service_account import Credentials
 
 URL = "https://veritasthca.com/2023/06/17/live-rosin-menu/"
-SPREADSHEET_ID = "PUT_YOUR_SHEET_ID_HERE"
+SPREADSHEET_ID = "17goBwXxZlBoLlOa9astP6uWdF5YS0wBB9mvLN1whaoI"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
