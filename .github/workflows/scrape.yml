@@ -25,7 +25,7 @@ jobs:
       - name: Write Google credentials
         run: |
           mkdir -p scraper
-          printf "%s" "${{ secrets.GSHEETS_CREDENTIALS }}" > scraper/credentials.json
+          echo "${{ secrets.GSHEETS_CREDENTIALS_B64 }}" | base64 --decode > scraper/credentials.json
 
       - name: Run scraper
         run: |
