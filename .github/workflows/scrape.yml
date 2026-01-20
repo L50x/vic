@@ -21,7 +21,7 @@ jobs:
           GSHEETS_CREDS: ${{ secrets.GSHEETS_CREDENTIALS }}
         run: |
           mkdir -p scraper
-          echo "$GSHEETS_CREDS" > scraper/credentials.json
+          echo "$GSHEETS_CREDENTIALS" > scraper/credentials.json
       - name: Run scraper
         run: |
           python scraper/veritas_to_gsheets.py
