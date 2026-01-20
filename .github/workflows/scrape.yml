@@ -18,7 +18,7 @@ jobs:
           pip install requests beautifulsoup4 pandas gspread google-auth
       - name: Write Google credentials
         env:
-          GSHEETS_CREDS: ${{ secrets.GSHEETS_CREDENTIALS }}
+          GSHEETS_CREDENTIALS: ${{ secrets.GSHEETS_CREDENTIALS }}
         run: |
           mkdir -p scraper
           echo "$GSHEETS_CREDENTIALS" > scraper/credentials.json
