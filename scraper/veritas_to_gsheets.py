@@ -253,23 +253,18 @@ def update_sheets(records):
         
         # Batch update strain names to hyperlinks
         print("Creating hyperlinks...")
-        batch_data = []
         for i, record in enumerate(records, start=2):
             if record["link"]:
-                batch_data.append({
-                    'range': f'A{i}',
-                    'values': [[f'=HYPERLINK("{record["link"]}","{record["strain"]}")']]
-                })
-        
-        if batch_data:
-            # Use value_input_option='USER_ENTERED' to interpret formulas
-            for item in batch_data:
+                # Escape any double quotes in the strain name
+                strain_escaped = record["strain"].replace('"', '""')
+                formula = f'=HYPERLINK("{record["link"]}","{strain_escaped}")'
                 current_ws.update(
-                    item['range'],
-                    item['values'],
+                    f'A{i}',
+                    [[formula]],
                     value_input_option='USER_ENTERED'
                 )
-                time.sleep(REQUEST_DELAY)
+                time.sleep(0.15)  # Small delay between updates
+        time.sleep(REQUEST_DELAY)
         
     # Apply formatting
     print("Applying formatting...")
