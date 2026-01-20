@@ -146,14 +146,12 @@ def extract_lab_from_section(section_text):
     
     if "socal" in section_lower:
         return "SOCAL Lab"
-    elif "vegas" in section_lower or "lv" in section_lower:
-        if "tier 2" in section_lower:
-            return "Vegas Lab (Tier 2)"
+    elif "vegas" in section_lower:
         return "Vegas Lab"
     elif "tier 3" in section_lower or ("oc" in section_lower and "lv" in section_lower):
-        return "LV + OC"
+        return "OC + Vegas Lab"
     else:
-        return "OC"
+        return "OC Lab"
 
 def is_section_header(cells):
     """Determine if this row is a section header"""
@@ -175,6 +173,27 @@ def normalize_strain_name(name_text):
     # Remove 'Exotic' if it's at the end
     name = re.sub(r'\s+Exotic\s*$', '', name_text, flags=re.IGNORECASE).strip()
     return name
+
+def get_tier_sort_key(tier_text):
+    """Generate sort key for tier ordering: T1 Exotic > T1 > T2 > T3"""
+    tier_lower = tier_text.lower()
+    
+    if "tier 1" in tier_lower and "exotic" in tier_lower:
+        return 0
+    elif "tier 1" in tier_lower:
+        return 1
+    elif "tier 2" in tier_lower:
+        return 2
+    elif "tier 3" in tier_lower:
+        return 3
+    elif "tier 4" in tier_lower:
+        return 4
+    else:
+        return 99  # Unknown tiers go last
+
+def sort_records(records):
+    """Sort records by tier (T1 Exotic > T1 > T2 > T3), then alphabetically by strain"""
+    return sorted(records, key=lambda r: (get_tier_sort_key(r["tier"]), r["strain"].lower()))
 
 def fetch_menu():
     soup = BeautifulSoup(requests.get(URL).text, "html.parser")
@@ -229,12 +248,13 @@ def fetch_menu():
             "stock": stock,
             "moq": moq,
             "price": price,
-            "lab": current_lab,
+            "lab": current_lab if current_lab != "Unknown" else "OC Lab",
             "link": link,
             "last_seen": format_timestamp()
         })
 
-    return records
+    # Sort records before returning
+    return sort_records(records)
 
 # ---------------- formatting ----------------
 
@@ -387,7 +407,9 @@ def update_sheets(records):
     # Write data rows with hyperlinks embedded
     print(f"Writing {len(records)} rows with hyperlinks...")
     data_rows = []
-    for record in records:
+    sold_out_rows = []  # Track which rows are sold out for strikethrough formatting
+    
+    for idx, record in enumerate(records):
         # Create hyperlink formula for strain if link exists
         if record["link"]:
             strain_escaped = record["strain"].replace('"', '""')
@@ -405,6 +427,10 @@ def update_sheets(records):
             record["last_seen"]
         ]
         data_rows.append(row)
+        
+        # Track if this row is sold out (row number is idx + 2 because of header)
+        if record["stock"] == "SOLD OUT":
+            sold_out_rows.append(idx + 2)
     
     if data_rows:
         current_ws.append_rows(data_rows, value_input_option='USER_ENTERED')
@@ -412,6 +438,24 @@ def update_sheets(records):
     # Apply formatting with dynamic column widths
     print("Applying formatting...")
     format_sheet_dynamic(current_ws, headers, data_rows)
+    
+    # Apply strikethrough to sold out items
+    if sold_out_rows:
+        print(f"Applying strikethrough to {len(sold_out_rows)} sold out items...")
+        for row_num in sold_out_rows:
+            current_ws.format(f'A{row_num}:G{row_num}', {
+                "textFormat": {
+                    "strikethrough": True
+                }
+            })
+            # Keep the hyperlink formatting on strain column
+            current_ws.format(f'A{row_num}', {
+                "textFormat": {
+                    "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
+                    "underline": True,
+                    "strikethrough": True
+                }
+            })
 
     # Update changelog
     print("Updating changelog...")
