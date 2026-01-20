@@ -21,14 +21,14 @@ sh = gc.open_by_key(SPREADSHEET_ID)
 
 # Ensure sheet order
 try:
-    changelog_ws = sh.worksheet("Changelog")
+    changelog_ws = sh.worksheet("changelog")
 except gspread.WorksheetNotFound:
-    changelog_ws = sh.add_worksheet("Changelog", rows=1000, cols=10)
+    changelog_ws = sh.add_worksheet("changelog", rows=1000, cols=10)
 
 try:
-    current_ws = sh.worksheet("Current Menu")
+    current_ws = sh.worksheet("current_menu")
 except gspread.WorksheetNotFound:
-    current_ws = sh.add_worksheet("Current Menu", rows=1000, cols=10)
+    current_ws = sh.add_worksheet("current_menu", rows=1000, cols=10)
 
 sh.reorder_worksheets([changelog_ws, current_ws])
 
@@ -155,9 +155,25 @@ def update_sheets(new_df):
     current_ws.append_row(list(new_df.reset_index().columns))
     
     # Convert dataframe to list and ensure all values are JSON-safe
-    rows_data = new_df.reset_index().values.tolist()
-    # Convert any remaining None to empty string
-    rows_data = [[str(v) if v is not None and v != "" else "" for v in row] for row in rows_data]
+    df_reset = new_df.reset_index()
+    rows_data = []
+    for _, row in df_reset.iterrows():
+        clean_row = []
+        for val in row:
+            # Handle different data types
+            if pd.isna(val) or val == "":
+                clean_row.append("")
+            elif isinstance(val, bool):
+                clean_row.append(str(val))
+            elif isinstance(val, (int, float)):
+                if pd.isna(val):
+                    clean_row.append("")
+                else:
+                    clean_row.append(val)
+            else:
+                clean_row.append(str(val))
+        rows_data.append(clean_row)
+    
     current_ws.append_rows(rows_data)
 
     # append changelog
