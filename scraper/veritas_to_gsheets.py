@@ -133,28 +133,54 @@ def format_sheet(worksheet, num_rows):
     worksheet.columns_auto_resize(0, 4)
     
     if num_rows > 1:
-        # Format stock column - red background and bold for "SOLD OUT"
-        for row_num in range(2, num_rows + 1):
-            cell_value = worksheet.cell(row_num, 2).value
+        # Batch format stock cells based on their values
+        sold_out_cells = []
+        low_stock_cells = []
+        normal_stock_cells = []
+        
+        # Read all stock values at once
+        stock_values = worksheet.batch_get([f'B2:B{num_rows}'])[0]
+        
+        for row_num, cell_data in enumerate(stock_values, start=2):
+            if not cell_data:
+                continue
+            cell_value = cell_data[0] if cell_data else ""
+            
             if cell_value == "SOLD OUT":
-                worksheet.format(f'B{row_num}', {
+                sold_out_cells.append(f'B{row_num}')
+            elif cell_value and 'g' in str(cell_value):
+                try:
+                    stock_num = int(str(cell_value).replace('g', ''))
+                    if 1 <= stock_num <= 20:
+                        low_stock_cells.append(f'B{row_num}')
+                    else:
+                        normal_stock_cells.append(f'B{row_num}')
+                except:
+                    normal_stock_cells.append(f'B{row_num}')
+        
+        # Batch format sold out cells
+        if sold_out_cells:
+            for cell in sold_out_cells:
+                worksheet.format(cell, {
                     "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
                     "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0.0, "blue": 0.0}},
                     "horizontalAlignment": "CENTER"
                 })
-            else:
-                # Yellow background for low stock (contains single digit before 'g')
-                if cell_value and 'g' in str(cell_value):
-                    stock_num = int(str(cell_value).replace('g', ''))
-                    if 1 <= stock_num <= 20:
-                        worksheet.format(f'B{row_num}', {
-                            "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8},
-                            "horizontalAlignment": "CENTER"
-                        })
-                    else:
-                        worksheet.format(f'B{row_num}', {
-                            "horizontalAlignment": "CENTER"
-                        })
+        
+        # Batch format low stock cells
+        if low_stock_cells:
+            for cell in low_stock_cells:
+                worksheet.format(cell, {
+                    "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8},
+                    "horizontalAlignment": "CENTER"
+                })
+        
+        # Batch format normal stock cells
+        if normal_stock_cells:
+            for cell in normal_stock_cells:
+                worksheet.format(cell, {
+                    "horizontalAlignment": "CENTER"
+                })
         
         # Center align tier and price columns
         worksheet.format(f'C2:C{num_rows}', {
@@ -244,11 +270,18 @@ def update_sheets(records):
     if data_rows:
         current_ws.append_rows(data_rows)
         
-        # Convert strain names to hyperlinks
+        # Batch update strain names to hyperlinks
+        batch_data = []
         for i, record in enumerate(records, start=2):  # Start at row 2 (after header)
             if record["link"]:
-                # Use HYPERLINK formula: =HYPERLINK(url, label)
-                current_ws.update_cell(i, 1, f'=HYPERLINK("{record["link"]}", "{record["strain"]}")')
+                batch_data.append({
+                    'range': f'A{i}',
+                    'values': [[f'=HYPERLINK("{record["link"]}", "{record["strain"]}")']]
+                })
+        
+        # Update all hyperlinks in one batch request
+        if batch_data:
+            current_ws.batch_update(batch_data)
         
     # Apply formatting
     format_sheet(current_ws, len(data_rows) + 1)
