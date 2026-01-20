@@ -13,12 +13,8 @@ SPREADSHEET_ID = "17goBwXxZlBoLlOa9astP6uWdF5YS0wBB9mvLN1whaoI"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 
-# Rate limiting: 60 write requests per minute = 1 request per second
-# Using 1.1 seconds to be safe (54 requests/minute max)
-REQUEST_DELAY = 1.1  # seconds between requests
-MIN_REQUEST_INTERVAL = 1.1  # minimum time between any API calls
-
-# Track last API call time globally
+REQUEST_DELAY = 1.1
+MIN_REQUEST_INTERVAL = 1.1
 _last_api_call = 0
 
 def rate_limited_call(func):
@@ -26,26 +22,19 @@ def rate_limited_call(func):
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         global _last_api_call
-        
-        # Calculate time since last call
         current_time = time.time()
         time_since_last_call = current_time - _last_api_call
         
-        # If not enough time has passed, wait
         if time_since_last_call < MIN_REQUEST_INTERVAL:
             sleep_time = MIN_REQUEST_INTERVAL - time_since_last_call
             print(f"  [Rate limit] Waiting {sleep_time:.2f}s before next API call...")
             time.sleep(sleep_time)
         
-        # Update last call time
         _last_api_call = time.time()
-        
-        # Execute the function
         return func(*args, **kwargs)
     
     return wrapper
 
-# Wrap all gspread methods that make API calls
 def wrap_worksheet_methods(worksheet):
     """Wrap all API-calling methods of a worksheet with rate limiting"""
     api_methods = [
@@ -75,11 +64,8 @@ creds = Credentials.from_service_account_file(
 )
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SPREADSHEET_ID)
-
-# Wrap spreadsheet methods
 sh = wrap_spreadsheet_methods(sh)
 
-# Ensure sheet order and rename sheets
 print("Setting up worksheets...")
 try:
     changelog_ws = sh.worksheet("changelog")
@@ -117,11 +103,18 @@ def parse_grams(text):
         return "SOLD OUT"
     if "SOLD OUT" in text.upper():
         return "SOLD OUT"
-    m = re.search(r"(\d+)", text)
+    m = re.search(r"(\d+)\s*g", text, re.IGNORECASE)
     if m:
         grams = int(m.group(1))
         return "SOLD OUT" if grams == 0 else f"{grams}g"
     return "SOLD OUT"
+
+def parse_moq(text):
+    """Parse minimum order quantity"""
+    if not text or "SOLD OUT" in text.upper():
+        return ""
+    m = re.search(r"(\d+)\s*g", text, re.IGNORECASE)
+    return f"{m.group(1)}g" if m else ""
 
 def parse_price(text):
     if not text:
@@ -140,13 +133,9 @@ def calculate_column_width(values, min_width=80, max_width=400, padding=20):
     if not values:
         return min_width
     
-    # Find the longest string
     max_length = max(len(str(v)) for v in values)
-    
-    # Approximate 7-8 pixels per character, plus padding
     width = (max_length * 8) + padding
     
-    # Clamp between min and max
     return max(min_width, min(width, max_width))
 
 # ---------------- scrape ----------------
@@ -155,15 +144,37 @@ def extract_lab_from_section(section_text):
     """Extract lab name from section header"""
     section_lower = section_text.lower()
     
-    # Map section text to lab names
     if "socal" in section_lower:
         return "SOCAL Lab"
     elif "vegas" in section_lower or "lv" in section_lower:
+        if "tier 2" in section_lower:
+            return "Vegas Lab (Tier 2)"
         return "Vegas Lab"
-    elif "oc" in section_lower and "lv" in section_lower:
+    elif "tier 3" in section_lower or ("oc" in section_lower and "lv" in section_lower):
         return "LV + OC"
     else:
         return "OC"
+
+def is_section_header(cells):
+    """Determine if this row is a section header"""
+    if len(cells) == 0:
+        return False
+    
+    first_cell_text = clean_text(cells[0]).lower()
+    
+    # Check for explicit tier markers
+    if any(marker in first_cell_text for marker in ["tier 1", "tier 2", "tier 3", "tier 4"]):
+        # Make sure it's actually a header and not a data row
+        if len(cells) <= 2 or clean_text(cells[1]).lower() in ["", "tier", "tier level"]:
+            return True
+    
+    return False
+
+def normalize_strain_name(name_text):
+    """Extract and normalize strain name, handling 'Exotic' suffix"""
+    # Remove 'Exotic' if it's at the end
+    name = re.sub(r'\s+Exotic\s*$', '', name_text, flags=re.IGNORECASE).strip()
+    return name
 
 def fetch_menu():
     soup = BeautifulSoup(requests.get(URL).text, "html.parser")
@@ -180,34 +191,45 @@ def fetch_menu():
             continue
 
         # Check if this is a section header
-        if len(cells) == 1 or (len(cells) > 0 and "Tier" in clean_text(cells[0]) and clean_text(cells[1]) in ["", "Tier", "Tier Level"]):
+        if is_section_header(cells):
             current_section = clean_text(cells[0])
             current_lab = extract_lab_from_section(current_section)
+            print(f"  Found section: {current_section} ({current_lab})")
             continue
 
         name_cell = cells[0]
-        name = clean_text(name_cell)
+        raw_name = clean_text(name_cell)
         link = name_cell.find("a")["href"] if name_cell.find("a") else ""
 
         # Skip header rows and empty rows
-        if not name or name.lower() in ["name", "strain"]:
+        if not raw_name or raw_name.lower() in ["name", "strain"]:
             continue
 
+        # Normalize strain name
+        strain = normalize_strain_name(raw_name)
+        
         tier = clean_text(cells[1]) if len(cells) > 1 else ""
         stock_text = clean_text(cells[2]) if len(cells) > 2 else ""
+        moq_text = clean_text(cells[3]) if len(cells) > 3 else ""
         price_text = clean_text(cells[4]) if len(cells) > 4 else ""
 
         stock = parse_grams(stock_text)
+        moq = parse_moq(moq_text)
         price = parse_price(price_text)
 
+        # Create unique ID: lab + tier + strain name
+        # This ensures same strain in different tiers/labs are tracked separately
+        item_id = f"{current_lab}|{tier}|{strain}".lower().replace(" ", "_")
+
         records.append({
-            "id": f"{current_section}|{tier}|{name}".lower().replace(" ", "_"),
+            "id": item_id,
             "section": current_section,
-            "strain": name,
+            "strain": strain,
             "tier": tier,
             "stock": stock,
+            "moq": moq,
             "price": price,
-            "lab": current_lab if current_lab != "Unknown" else "OC",
+            "lab": current_lab,
             "link": link,
             "last_seen": format_timestamp()
         })
@@ -238,7 +260,6 @@ def format_sheet_dynamic(worksheet, headers, data_rows):
     print("Calculating column widths...")
     column_widths = []
     for col_idx in range(len(headers)):
-        # Collect all values in this column (header + data)
         column_values = [headers[col_idx]]
         if data_rows:
             column_values.extend([row[col_idx] for row in data_rows])
@@ -268,20 +289,12 @@ def format_sheet_dynamic(worksheet, headers, data_rows):
     if data_rows:
         num_rows = len(data_rows) + 1
         
-        print("Centering stock column...")
-        worksheet.format(f'B2:B{num_rows}', {
-            "horizontalAlignment": "CENTER"
-        })
-        
-        print("Centering tier column...")
-        worksheet.format(f'C2:C{num_rows}', {
-            "horizontalAlignment": "CENTER"
-        })
-        
-        print("Centering lab column...")
-        worksheet.format(f'D2:D{num_rows}', {
-            "horizontalAlignment": "CENTER"
-        })
+        # Center specific columns (adjust indices based on headers)
+        print("Centering columns...")
+        worksheet.format(f'B2:B{num_rows}', {"horizontalAlignment": "CENTER"})  # Stock
+        worksheet.format(f'C2:C{num_rows}', {"horizontalAlignment": "CENTER"})  # Tier
+        worksheet.format(f'D2:D{num_rows}', {"horizontalAlignment": "CENTER"})  # MOQ
+        worksheet.format(f'E2:E{num_rows}', {"horizontalAlignment": "CENTER"})  # Lab
         
         print("Formatting strain links...")
         worksheet.format(f'A2:A{num_rows}', {
@@ -292,7 +305,7 @@ def format_sheet_dynamic(worksheet, headers, data_rows):
         })
         
         print("Formatting prices...")
-        worksheet.format(f'E2:E{num_rows}', {
+        worksheet.format(f'F2:F{num_rows}', {
             "numberFormat": {
                 "type": "CURRENCY",
                 "pattern": "$#,##0.00"
@@ -321,14 +334,16 @@ def update_sheets(records):
     for item_id, item in new_dict.items():
         if item_id not in old_dict:
             changelog_rows.append([
-                timestamp, "NEW_ITEM", item["strain"], item["link"], "", "", ""
+                timestamp, "NEW_ITEM", item["strain"], item["link"], 
+                item["tier"], item["lab"], "", "", item["stock"]
             ])
 
     # REMOVED items
     for item_id, item in old_dict.items():
         if item_id not in new_dict:
             changelog_rows.append([
-                timestamp, "REMOVED", item.get("strain", ""), item.get("link", ""), "", "", ""
+                timestamp, "REMOVED", item.get("strain", ""), item.get("link", ""),
+                item.get("tier", ""), item.get("lab", ""), "", "", ""
             ])
 
     # CHANGED items
@@ -336,21 +351,36 @@ def update_sheets(records):
         old_item = old_dict[item_id]
         new_item = new_dict[item_id]
         
-        for field in ["stock", "price"]:
+        # Track all fields that can change
+        for field in ["stock", "moq", "price"]:
             old_val = str(old_item.get(field, ""))
             new_val = str(new_item.get(field, ""))
-            if old_val != new_val:
+            
+            # Normalize for comparison
+            if field == "price":
+                try:
+                    old_val_normalized = f"{float(old_val):.2f}" if old_val else "0.00"
+                    new_val_normalized = f"{float(new_val):.2f}" if new_val else "0.00"
+                except:
+                    old_val_normalized = old_val
+                    new_val_normalized = new_val
+            else:
+                old_val_normalized = old_val
+                new_val_normalized = new_val
+            
+            if old_val_normalized != new_val_normalized:
                 changelog_rows.append([
                     timestamp, "FIELD_CHANGE", new_item["strain"],
-                    new_item["link"], field, old_val, new_val
+                    new_item["link"], new_item["tier"], new_item["lab"],
+                    field, old_val, new_val
                 ])
 
     # Overwrite current menu
     print("Clearing current menu...")
     current_ws.clear()
     
-    # Write headers
-    headers = ["Strain", "Stock", "Tier", "Lab", "Price", "Last Seen"]
+    # Write headers - now includes MOQ
+    headers = ["Strain", "Stock", "Tier", "MOQ", "Lab", "Price", "Last Seen"]
     print("Writing headers...")
     current_ws.append_row(headers)
     
@@ -369,6 +399,7 @@ def update_sheets(records):
             strain_value,
             record["stock"],
             record["tier"],
+            record["moq"],
             record["lab"],
             record["price"],
             record["last_seen"]
@@ -376,7 +407,6 @@ def update_sheets(records):
         data_rows.append(row)
     
     if data_rows:
-        # Batch insert all rows at once with formulas
         current_ws.append_rows(data_rows, value_input_option='USER_ENTERED')
         
     # Apply formatting with dynamic column widths
@@ -387,16 +417,14 @@ def update_sheets(records):
     print("Updating changelog...")
     existing_changelog = changelog_ws.get_all_values()
     
-    changelog_headers = ["Strain", "Status", "Timestamp"]
+    changelog_headers = ["Strain", "Status", "Tier", "Lab", "Timestamp"]
     
     # Always ensure headers are present and formatted
     if not existing_changelog:
-        # Clear and add header row
         changelog_ws.clear()
         changelog_ws.append_row(changelog_headers)
         
-        # Format changelog header to match current menu
-        changelog_ws.format('A1:C1', {
+        changelog_ws.format('A1:E1', {
             "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
             "textFormat": {
                 "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
@@ -410,10 +438,8 @@ def update_sheets(records):
     
     # Append changelog entries if there are any changes
     if changelog_rows:
-        # Get the current row count
         current_row_count = len(changelog_ws.get_all_values())
         
-        # Transform changelog rows to new format: [Strain (with hyperlink), Status, Timestamp]
         print(f"Preparing {len(changelog_rows)} changelog entries with hyperlinks...")
         formatted_changelog = []
         for row in changelog_rows:
@@ -421,17 +447,31 @@ def update_sheets(records):
             change_type = row[1]
             strain_name = row[2]
             link_url = row[3]
-            field = row[4]
-            old_val = row[5]
-            new_val = row[6]
+            tier = row[4]
+            lab = row[5]
+            field = row[6]
+            old_val = row[7]
+            new_val = row[8]
             
-            # Create status message
+            # Create status message with more context
             if change_type == "NEW_ITEM":
-                status = "NEW ITEM"
+                status = f"🆕 NEW ITEM - Stock: {new_val}"
             elif change_type == "REMOVED":
-                status = "REMOVED"
+                status = "🗑️ REMOVED"
             elif change_type == "FIELD_CHANGE":
-                status = f"{field.upper()}: {old_val} → {new_val}"
+                if field == "stock":
+                    if new_val == "SOLD OUT":
+                        status = f"⛔ SOLD OUT (was {old_val})"
+                    elif old_val == "SOLD OUT":
+                        status = f"✅ BACK IN STOCK - {new_val}"
+                    else:
+                        status = f"📊 STOCK: {old_val} → {new_val}"
+                elif field == "price":
+                    status = f"💰 PRICE: ${old_val} → ${new_val}"
+                elif field == "moq":
+                    status = f"📦 MOQ: {old_val} → {new_val}"
+                else:
+                    status = f"{field.upper()}: {old_val} → {new_val}"
             else:
                 status = change_type
             
@@ -442,7 +482,7 @@ def update_sheets(records):
             else:
                 strain_formula = strain_name
             
-            formatted_changelog.append([strain_formula, status, timestamp])
+            formatted_changelog.append([strain_formula, status, tier, lab, timestamp])
         
         # Append the changelog rows with formulas
         changelog_ws.append_rows(formatted_changelog, value_input_option='USER_ENTERED')
@@ -482,6 +522,8 @@ def update_sheets(records):
             })
         
         changelog_ws.spreadsheet.batch_update(requests_body)
+        
+        print(f"✅ Logged {len(changelog_rows)} changes to changelog")
 
 # ---------------- main ----------------
 
