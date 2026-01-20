@@ -14,7 +14,7 @@ SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
 # ---------------- auth ----------------
 
 creds = Credentials.from_service_account_file(
-    "credentials.json", scopes=SCOPES
+    "scraper/credentials.json", scopes=SCOPES
 )
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SPREADSHEET_ID)
