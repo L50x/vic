@@ -135,7 +135,7 @@ def format_timestamp(dt=None):
         dt = datetime.utcnow()
     return dt.strftime("%Y-%m-%d %H:%M")
 
-def calculate_column_width(values, min_width=80, max_width=400, padding=20):
+def calculate_column_width(values, min_width=40, max_width=400, padding=20):
     """Calculate optimal column width based on content length"""
     if not values:
         return min_width
