@@ -365,17 +365,14 @@ def update_sheets(records):
         print("Updating changelog...")
         existing_changelog = changelog_ws.get_all_values()
         
-        changelog_headers = [
-            "Timestamp", "Change Type", "Strain",
-            "Link", "Field", "Old Value", "New Value"
-        ]
+        changelog_headers = ["Strain", "Status", "Timestamp"]
         
         if not existing_changelog:
             # Add header row
             changelog_ws.append_row(changelog_headers)
             
             # Format changelog header to match current menu
-            changelog_ws.format('A1:G1', {
+            changelog_ws.format('A1:C1', {
                 "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
                 "textFormat": {
                     "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
@@ -390,23 +387,48 @@ def update_sheets(records):
         # Get the current row count to know where to add hyperlinks
         current_row_count = len(changelog_ws.get_all_values())
         
-        # Add hyperlinks to strain names in changelog rows before appending
+        # Transform changelog rows to new format: [Strain, Status, Timestamp]
         print(f"Preparing {len(changelog_rows)} changelog entries with hyperlinks...")
+        formatted_changelog_rows = []
         for row in changelog_rows:
-            strain_name = row[2]  # Strain is column C (index 2)
-            link_url = row[3]     # Link is column D (index 3)
+            timestamp = row[0]
+            change_type = row[1]
+            strain_name = row[2]
+            link_url = row[3]
+            field = row[4]
+            old_value = row[5]
+            new_value = row[6]
             
+            # Create status message
+            if change_type == "NEW_ITEM":
+                status = "Added to menu"
+            elif change_type == "REMOVED":
+                status = "Removed from menu"
+            elif change_type == "FIELD_CHANGE":
+                if field == "stock":
+                    status = f"Stock: {old_value} → {new_value}"
+                elif field == "price":
+                    status = f"Price: ${old_value} → ${new_value}"
+                else:
+                    status = f"{field}: {old_value} → {new_value}"
+            else:
+                status = change_type
+            
+            # Create hyperlink formula for strain if link exists
             if link_url and strain_name:
                 strain_escaped = strain_name.replace('"', '""')
-                formula = f'=HYPERLINK("{link_url}","{strain_escaped}")'
-                row[2] = formula  # Replace strain name with hyperlink formula
+                strain_formula = f'=HYPERLINK("{link_url}","{strain_escaped}")'
+            else:
+                strain_formula = strain_name
+            
+            formatted_changelog_rows.append([strain_formula, status, timestamp])
         
         # Append the changelog rows with formulas
-        changelog_ws.append_rows(changelog_rows, value_input_option='USER_ENTERED')
+        changelog_ws.append_rows(formatted_changelog_rows, value_input_option='USER_ENTERED')
         
         # Format strain column as blue hyperlinks
-        new_row_count = current_row_count + len(changelog_rows)
-        changelog_ws.format(f'C2:C{new_row_count}', {
+        new_row_count = current_row_count + len(formatted_changelog_rows)
+        changelog_ws.format(f'A2:A{new_row_count}', {
             "textFormat": {
                 "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
                 "underline": True
