@@ -115,31 +115,37 @@ def fetch_menu():
 def format_sheet(worksheet, num_rows):
     """Apply formatting to make the sheet look better"""
     
+    # Build all format requests at once
+    formats = []
+    
     # Freeze header row
     worksheet.freeze(rows=1)
     
     # Format header row - bold, background color, text color
-    worksheet.format('A1:E1', {
-        "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
-        "textFormat": {
-            "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
-            "fontSize": 11,
-            "bold": True
-        },
-        "horizontalAlignment": "CENTER"
+    formats.append({
+        'range': 'A1:E1',
+        'format': {
+            "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
+            "textFormat": {
+                "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                "fontSize": 11,
+                "bold": True
+            },
+            "horizontalAlignment": "CENTER"
+        }
     })
     
     # Auto-resize columns
     worksheet.columns_auto_resize(0, 4)
     
     if num_rows > 1:
-        # Batch format stock cells based on their values
-        sold_out_cells = []
-        low_stock_cells = []
-        normal_stock_cells = []
-        
-        # Read all stock values at once
+        # Read all stock values at once to determine formatting
         stock_values = worksheet.batch_get([f'B2:B{num_rows}'])[0]
+        
+        # Build ranges for each format type
+        sold_out_ranges = []
+        low_stock_ranges = []
+        normal_stock_ranges = []
         
         for row_num, cell_data in enumerate(stock_values, start=2):
             if not cell_data:
@@ -147,62 +153,84 @@ def format_sheet(worksheet, num_rows):
             cell_value = cell_data[0] if cell_data else ""
             
             if cell_value == "SOLD OUT":
-                sold_out_cells.append(f'B{row_num}')
+                sold_out_ranges.append(f'B{row_num}')
             elif cell_value and 'g' in str(cell_value):
                 try:
                     stock_num = int(str(cell_value).replace('g', ''))
                     if 1 <= stock_num <= 20:
-                        low_stock_cells.append(f'B{row_num}')
+                        low_stock_ranges.append(f'B{row_num}')
                     else:
-                        normal_stock_cells.append(f'B{row_num}')
+                        normal_stock_ranges.append(f'B{row_num}')
                 except:
-                    normal_stock_cells.append(f'B{row_num}')
+                    normal_stock_ranges.append(f'B{row_num}')
         
-        # Batch format sold out cells
-        if sold_out_cells:
-            for cell in sold_out_cells:
-                worksheet.format(cell, {
-                    "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
-                    "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0.0, "blue": 0.0}},
-                    "horizontalAlignment": "CENTER"
+        # Add format for sold out cells
+        if sold_out_ranges:
+            for cell_range in sold_out_ranges:
+                formats.append({
+                    'range': cell_range,
+                    'format': {
+                        "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
+                        "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0.0, "blue": 0.0}},
+                        "horizontalAlignment": "CENTER"
+                    }
                 })
         
-        # Batch format low stock cells
-        if low_stock_cells:
-            for cell in low_stock_cells:
-                worksheet.format(cell, {
-                    "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8},
-                    "horizontalAlignment": "CENTER"
+        # Add format for low stock cells
+        if low_stock_ranges:
+            for cell_range in low_stock_ranges:
+                formats.append({
+                    'range': cell_range,
+                    'format': {
+                        "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8},
+                        "horizontalAlignment": "CENTER"
+                    }
                 })
         
-        # Batch format normal stock cells
-        if normal_stock_cells:
-            for cell in normal_stock_cells:
-                worksheet.format(cell, {
-                    "horizontalAlignment": "CENTER"
+        # Add format for normal stock cells
+        if normal_stock_ranges:
+            for cell_range in normal_stock_ranges:
+                formats.append({
+                    'range': cell_range,
+                    'format': {
+                        "horizontalAlignment": "CENTER"
+                    }
                 })
         
-        # Center align tier and price columns
-        worksheet.format(f'C2:C{num_rows}', {
-            "horizontalAlignment": "CENTER"
+        # Center align tier column
+        formats.append({
+            'range': f'C2:C{num_rows}',
+            'format': {
+                "horizontalAlignment": "CENTER"
+            }
         })
         
         # Format strain column (A) as blue hyperlinks
-        worksheet.format(f'A2:A{num_rows}', {
-            "textFormat": {
-                "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
-                "underline": True
+        formats.append({
+            'range': f'A2:A{num_rows}',
+            'format': {
+                "textFormat": {
+                    "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
+                    "underline": True
+                }
             }
         })
         
         # Format price as currency
-        worksheet.format(f'D2:D{num_rows}', {
-            "numberFormat": {
-                "type": "CURRENCY",
-                "pattern": "$#,##0.00"
-            },
-            "horizontalAlignment": "CENTER"
+        formats.append({
+            'range': f'D2:D{num_rows}',
+            'format': {
+                "numberFormat": {
+                    "type": "CURRENCY",
+                    "pattern": "$#,##0.00"
+                },
+                "horizontalAlignment": "CENTER"
+            }
         })
+    
+    # Apply all formats in one batch request
+    if formats:
+        worksheet.batch_format(formats)
 
 # ---------------- gsheets sync ----------------
 
