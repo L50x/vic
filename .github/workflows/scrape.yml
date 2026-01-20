@@ -1,0 +1,31 @@
+name: Veritas Inventory Checker
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"   # every 30 minutes
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install requests beautifulsoup4 pandas gspread google-auth
+
+      - name: Write Google credentials
+        run: |
+          echo "${{ secrets.GSHEETS_CREDENTIALS }}" > scraper/credentials.json
+
+      - name: Run scraper
+        run: |
+          python scraper/veritas_to_gsheets.py
