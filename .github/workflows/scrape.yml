@@ -1,7 +1,7 @@
 name: Veritas Inventory Checker
 on:
   schedule:
-    - cron: "*/30 * * * *"   # every 30 minutes
+    - cron: "*/30 * * * *"
   workflow_dispatch:
 jobs:
   scrape:
