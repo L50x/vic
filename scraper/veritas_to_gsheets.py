@@ -135,7 +135,7 @@ def format_timestamp(dt=None):
         dt = datetime.utcnow()
     return dt.strftime("%Y-%m-%d %H:%M")
 
-def calculate_column_width(values, min_width=40, max_width=400, padding=20):
+def calculate_column_width(values, min_width=80, max_width=400, padding=20):
     """Calculate optimal column width based on content length"""
     if not values:
         return min_width
@@ -151,6 +151,20 @@ def calculate_column_width(values, min_width=40, max_width=400, padding=20):
 
 # ---------------- scrape ----------------
 
+def extract_lab_from_section(section_text):
+    """Extract lab name from section header"""
+    section_lower = section_text.lower()
+    
+    # Map section text to lab names
+    if "socal" in section_lower:
+        return "SOCAL Lab"
+    elif "vegas" in section_lower or "lv" in section_lower:
+        return "Vegas Lab"
+    elif "oc" in section_lower and "lv" in section_lower:
+        return "LV + OC"
+    else:
+        return "Unknown"
+
 def fetch_menu():
     soup = BeautifulSoup(requests.get(URL).text, "html.parser")
     table = soup.select_one("figure table")
@@ -158,6 +172,7 @@ def fetch_menu():
 
     records = []
     current_section = "Unknown"
+    current_lab = "Unknown"
 
     for row in rows:
         cells = row.find_all("td")
@@ -167,6 +182,7 @@ def fetch_menu():
         # Check if this is a section header
         if len(cells) == 1 or (len(cells) > 0 and "Tier" in clean_text(cells[0]) and clean_text(cells[1]) in ["", "Tier", "Tier Level"]):
             current_section = clean_text(cells[0])
+            current_lab = extract_lab_from_section(current_section)
             continue
 
         name_cell = cells[0]
@@ -191,6 +207,7 @@ def fetch_menu():
             "tier": tier,
             "stock": stock,
             "price": price,
+            "lab": current_lab,
             "link": link,
             "last_seen": format_timestamp()
         })
@@ -261,6 +278,11 @@ def format_sheet_dynamic(worksheet, headers, data_rows):
             "horizontalAlignment": "CENTER"
         })
         
+        print("Centering lab column...")
+        worksheet.format(f'D2:D{num_rows}', {
+            "horizontalAlignment": "CENTER"
+        })
+        
         print("Formatting strain links...")
         worksheet.format(f'A2:A{num_rows}', {
             "textFormat": {
@@ -270,7 +292,7 @@ def format_sheet_dynamic(worksheet, headers, data_rows):
         })
         
         print("Formatting prices...")
-        worksheet.format(f'D2:D{num_rows}', {
+        worksheet.format(f'E2:E{num_rows}', {
             "numberFormat": {
                 "type": "CURRENCY",
                 "pattern": "$#,##0.00"
@@ -328,7 +350,7 @@ def update_sheets(records):
     current_ws.clear()
     
     # Write headers
-    headers = ["Strain", "Stock", "Tier", "Price", "Last Seen"]
+    headers = ["Strain", "Stock", "Tier", "Lab", "Price", "Last Seen"]
     print("Writing headers...")
     current_ws.append_row(headers)
     
@@ -347,6 +369,7 @@ def update_sheets(records):
             strain_value,
             record["stock"],
             record["tier"],
+            record["lab"],
             record["price"],
             record["last_seen"]
         ]
