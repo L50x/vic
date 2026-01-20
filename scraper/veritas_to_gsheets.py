@@ -96,7 +96,12 @@ def fetch_menu():
             "last_seen": datetime.utcnow().isoformat()
         })
 
-    return pd.DataFrame(records)
+    df = pd.DataFrame(records)
+    
+    # Replace NaN/None with empty strings for JSON compatibility
+    df = df.fillna("")
+    
+    return df
 
 # ---------------- gsheets sync ----------------
 
@@ -121,30 +126,39 @@ def update_sheets(new_df):
     for idx in new_df.index.difference(old_df.index):
         r = new_df.loc[idx]
         changelog_rows.append([
-            timestamp, "NEW_ITEM", r.strain, r.link, None, None, None
+            timestamp, "NEW_ITEM", r.strain, r.link if r.link else "", "", "", ""
         ])
 
     # REMOVED
     for idx in old_df.index.difference(new_df.index):
         r = old_df.loc[idx]
+        link = r.get("link") if isinstance(r.get("link"), str) else ""
         changelog_rows.append([
-            timestamp, "REMOVED", r.strain, r.get("link"), None, None, None
+            timestamp, "REMOVED", r.strain, link, "", "", ""
         ])
 
     # CHANGES
     for idx in new_df.index.intersection(old_df.index):
         o, n = old_df.loc[idx], new_df.loc[idx]
         for field in ["stock", "price", "sold_out"]:
-            if o[field] != n[field]:
+            old_val = o[field] if o[field] != "" else None
+            new_val = n[field] if n[field] != "" else None
+            if old_val != new_val:
                 changelog_rows.append([
-                    timestamp, "FIELD_CHANGE", n.strain, n.link,
-                    field, o[field], n[field]
+                    timestamp, "FIELD_CHANGE", n.strain, 
+                    n.link if n.link else "",
+                    field, str(old_val), str(new_val)
                 ])
 
     # overwrite current menu
     current_ws.clear()
     current_ws.append_row(list(new_df.reset_index().columns))
-    current_ws.append_rows(new_df.reset_index().values.tolist())
+    
+    # Convert dataframe to list and ensure all values are JSON-safe
+    rows_data = new_df.reset_index().values.tolist()
+    # Convert any remaining None to empty string
+    rows_data = [[str(v) if v is not None and v != "" else "" for v in row] for row in rows_data]
+    current_ws.append_rows(rows_data)
 
     # append changelog
     if changelog_rows:
@@ -160,6 +174,7 @@ def update_sheets(new_df):
 def main():
     df = fetch_menu()
     update_sheets(df)
+    print("Successfully updated spreadsheet!")
 
 if __name__ == "__main__":
     main()
