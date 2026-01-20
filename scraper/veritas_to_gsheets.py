@@ -210,7 +210,7 @@ def fetch_menu():
             "lab": current_lab if current_lab != "Unknown" else "OC",
             "link": link,
             "last_seen": format_timestamp()
-        })})
+        })
 
     return records
 
