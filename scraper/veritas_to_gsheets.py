@@ -486,7 +486,7 @@ def update_sheets(records):
     print("Updating changelog...")
     existing_changelog = changelog_ws.get_all_values()
     
-    changelog_headers = ["Strain", "Status", "Tier", "Lab", "Timestamp"]
+    changelog_headers = ["Strain", "Tier", "Lab", "Status", "Timestamp"]
     
     # Always ensure headers are present and formatted
     if not existing_changelog:
@@ -551,7 +551,12 @@ def update_sheets(records):
             else:
                 strain_formula = strain_name
             
-            formatted_changelog.append([strain_formula, status, tier, lab, timestamp])
+            # Format: [Strain, Tier, Lab, Status, Timestamp]
+            formatted_changelog.append([strain_formula, tier, lab, status, timestamp])
+        
+        # Sort changelog by timestamp (most recent first)
+        # Extract timestamps and sort in reverse chronological order
+        formatted_changelog.sort(key=lambda x: x[4], reverse=True)
         
         # Append the changelog rows with formulas
         changelog_ws.append_rows(formatted_changelog, value_input_option='USER_ENTERED')
