@@ -207,10 +207,10 @@ def fetch_menu():
             "tier": tier,
             "stock": stock,
             "price": price,
-            "lab": current_lab,
+            "lab": current_lab if current_lab != "Unknown" else "OC",
             "link": link,
             "last_seen": format_timestamp()
-        })
+        })})
 
     return records
 
