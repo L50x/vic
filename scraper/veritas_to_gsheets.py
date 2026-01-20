@@ -5,7 +5,6 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
-import numpy as np
 
 URL = "https://veritasthca.com/2023/06/17/live-rosin-menu/"
 SPREADSHEET_ID = "17goBwXxZlBoLlOa9astP6uWdF5YS0wBB9mvLN1whaoI"
@@ -101,6 +100,80 @@ def fetch_menu():
 
     return records
 
+# ---------------- formatting ----------------
+
+def format_sheet(worksheet, num_rows):
+    """Apply formatting to make the sheet look better"""
+    
+    # Freeze header row
+    worksheet.freeze(rows=1)
+    
+    # Format header row - bold, background color, text color
+    worksheet.format('A1:I1', {
+        "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
+        "textFormat": {
+            "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+            "fontSize": 11,
+            "bold": True
+        },
+        "horizontalAlignment": "CENTER"
+    })
+    
+    # Auto-resize columns
+    worksheet.columns_auto_resize(0, 8)
+    
+    # Format sold_out column with conditional colors
+    if num_rows > 1:
+        # Red background for "true" (sold out)
+        worksheet.format(f'F2:F{num_rows}', {
+            "backgroundColor": {"red": 1.0, "green": 0.9, "blue": 0.9}
+        }, condition={
+            "type": "TEXT_CONTAINS",
+            "values": [{"userEnteredValue": "true"}]
+        })
+        
+        # Green background for "false" (in stock)
+        worksheet.format(f'F2:F{num_rows}', {
+            "backgroundColor": {"red": 0.9, "green": 1.0, "blue": 0.9}
+        }, condition={
+            "type": "TEXT_CONTAINS",
+            "values": [{"userEnteredValue": "false"}]
+        })
+        
+        # Format stock numbers with color coding
+        # Red for 0
+        worksheet.format(f'E2:E{num_rows}', {
+            "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
+            "textFormat": {"bold": True}
+        }, condition={
+            "type": "NUMBER_EQ",
+            "values": [{"userEnteredValue": "0"}]
+        })
+        
+        # Yellow for low stock (1-20)
+        worksheet.format(f'E2:E{num_rows}', {
+            "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8}
+        }, condition={
+            "type": "NUMBER_BETWEEN",
+            "values": [
+                {"userEnteredValue": "1"},
+                {"userEnteredValue": "20"}
+            ]
+        })
+        
+        # Center align specific columns
+        worksheet.format(f'D2:G{num_rows}', {
+            "horizontalAlignment": "CENTER"
+        })
+        
+        # Format price as currency
+        worksheet.format(f'G2:G{num_rows}', {
+            "numberFormat": {
+                "type": "CURRENCY",
+                "pattern": "$#,##0.00"
+            }
+        })
+
 # ---------------- gsheets sync ----------------
 
 def update_sheets(records):
@@ -149,7 +222,7 @@ def update_sheets(records):
     current_ws.clear()
     
     # Write headers
-    headers = ["id", "section", "strain", "tier", "stock", "sold_out", "price", "link", "last_seen"]
+    headers = ["ID", "Section", "Strain", "Tier", "Stock (g)", "Sold Out", "Price", "Link", "Last Seen"]
     current_ws.append_row(headers)
     
     # Write data rows
@@ -170,15 +243,31 @@ def update_sheets(records):
     
     if data_rows:
         current_ws.append_rows(data_rows)
+        
+    # Apply formatting
+    format_sheet(current_ws, len(data_rows) + 1)
 
     # Append changelog
     if changelog_rows:
         if not changelog_ws.get_all_values():
             changelog_ws.append_row([
-                "timestamp", "change_type", "strain",
-                "link", "field", "old_value", "new_value"
+                "Timestamp", "Change Type", "Strain",
+                "Link", "Field", "Old Value", "New Value"
             ])
+            # Format changelog header
+            changelog_ws.format('A1:G1', {
+                "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
+                "textFormat": {
+                    "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                    "fontSize": 11,
+                    "bold": True
+                },
+                "horizontalAlignment": "CENTER"
+            })
+            changelog_ws.freeze(rows=1)
+            
         changelog_ws.append_rows(changelog_rows)
+        changelog_ws.columns_auto_resize(0, 6)
 
 # ---------------- main ----------------
 
@@ -186,7 +275,7 @@ def main():
     records = fetch_menu()
     print(f"Fetched {len(records)} menu items")
     update_sheets(records)
-    print("Successfully updated spreadsheet!")
+    print("Successfully updated spreadsheet with formatting!")
 
 if __name__ == "__main__":
     main()
