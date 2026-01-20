@@ -196,9 +196,24 @@ def get_tier_sort_key(tier_text):
     else:
         return 99  # Unknown tiers go last
 
+def get_lab_sort_key(lab_text):
+    """Generate sort key for lab ordering: OC > SOCAL > Vegas > OC+Vegas"""
+    lab_lower = lab_text.lower()
+    
+    if "oc lab" in lab_lower and "vegas" not in lab_lower:
+        return 0  # OC Lab first
+    elif "socal" in lab_lower:
+        return 1  # SOCAL Lab second
+    elif "vegas" in lab_lower and "oc" not in lab_lower:
+        return 2  # Vegas Lab third
+    elif "oc + vegas" in lab_lower or "vegas + oc" in lab_lower:
+        return 3  # OC + Vegas Lab last
+    else:
+        return 99  # Unknown labs go last
+
 def sort_records(records):
-    """Sort records by tier (T1 Exotic > T1 > T2 > T3), then alphabetically by strain"""
-    return sorted(records, key=lambda r: (get_tier_sort_key(r["tier"]), r["strain"].lower()))
+    """Sort records by tier (T1 Exotic > T1 > T2 > T3), then lab (OC > SOCAL > Vegas), then alphabetically by strain"""
+    return sorted(records, key=lambda r: (get_tier_sort_key(r["tier"]), get_lab_sort_key(r["lab"]), r["strain"].lower()))
 
 def fetch_menu():
     soup = BeautifulSoup(requests.get(URL).text, "html.parser")
