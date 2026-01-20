@@ -384,50 +384,45 @@ def update_sheets(records):
             
             changelog_ws.freeze(rows=1)
         
-        # Get the current row count to know where to add hyperlinks
+        # Get the current row count
         current_row_count = len(changelog_ws.get_all_values())
         
-        # Transform changelog rows to new format: [Strain, Status, Timestamp]
+        # Transform changelog rows to new format: [Strain (with hyperlink), Status, Timestamp]
         print(f"Preparing {len(changelog_rows)} changelog entries with hyperlinks...")
-        formatted_changelog_rows = []
+        formatted_changelog = []
         for row in changelog_rows:
             timestamp = row[0]
             change_type = row[1]
             strain_name = row[2]
             link_url = row[3]
             field = row[4]
-            old_value = row[5]
-            new_value = row[6]
+            old_val = row[5]
+            new_val = row[6]
             
             # Create status message
             if change_type == "NEW_ITEM":
-                status = "Added to menu"
+                status = "NEW ITEM"
             elif change_type == "REMOVED":
-                status = "Removed from menu"
+                status = "REMOVED"
             elif change_type == "FIELD_CHANGE":
-                if field == "stock":
-                    status = f"Stock: {old_value} → {new_value}"
-                elif field == "price":
-                    status = f"Price: ${old_value} → ${new_value}"
-                else:
-                    status = f"{field}: {old_value} → {new_value}"
+                status = f"{field.upper()}: {old_val} → {new_val}"
             else:
                 status = change_type
             
-            # Create hyperlink formula for strain if link exists
+            # Create hyperlink for strain
             if link_url and strain_name:
                 strain_escaped = strain_name.replace('"', '""')
                 strain_formula = f'=HYPERLINK("{link_url}","{strain_escaped}")'
             else:
                 strain_formula = strain_name
             
-            formatted_changelog_rows.append([strain_formula, status, timestamp])
+            formatted_changelog.append([strain_formula, status, timestamp])
         
         # Append the changelog rows with formulas
-        changelog_ws.append_rows(formatted_changelog_rows, value_input_option='USER_ENTERED')
+        changelog_ws.append_rows(formatted_changelog, value_input_option='USER_ENTERED')
         
         # Format strain column as blue hyperlinks
-        new_row_count = current_row_count + len(formatted_changelog_rows)
+        new_row_count = current_row_count + len(formatted_changelog)
         changelog_ws.format(f'A2:A{new_row_count}', {
             "textFormat": {
                 "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
