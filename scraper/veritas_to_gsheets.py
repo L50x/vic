@@ -141,7 +141,79 @@ def format_sheet_simple(worksheet, num_rows):
     time.sleep(REQUEST_DELAY)
     
     print("Auto-resizing columns...")
-    worksheet.columns_auto_resize(0, 4)
+    # Set column widths based on content
+    # Column A: Strain names - typically 15-30 chars
+    # Column B: Stock - "SOLD OUT" or "XXXg" - ~10 chars max
+    # Column C: Tier - "Tier 1 Exotic" - ~15 chars max  
+    # Column D: Price - "$XX.XX" - ~8 chars
+    # Column E: Last Seen - ISO timestamp - ~26 chars
+    
+    # Each character is approximately 7 pixels, add padding
+    requests_body = {
+        'requests': [
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': worksheet.id,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 0,
+                        'endIndex': 1
+                    },
+                    'properties': {'pixelSize': 200},  # Strain column
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': worksheet.id,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 1,
+                        'endIndex': 2
+                    },
+                    'properties': {'pixelSize': 90},  # Stock column
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': worksheet.id,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 2,
+                        'endIndex': 3
+                    },
+                    'properties': {'pixelSize': 120},  # Tier column
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': worksheet.id,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 3,
+                        'endIndex': 4
+                    },
+                    'properties': {'pixelSize': 80},  # Price column
+                    'fields': 'pixelSize'
+                }
+            },
+            {
+                'updateDimensionProperties': {
+                    'range': {
+                        'sheetId': worksheet.id,
+                        'dimension': 'COLUMNS',
+                        'startIndex': 4,
+                        'endIndex': 5
+                    },
+                    'properties': {'pixelSize': 180},  # Last Seen column
+                    'fields': 'pixelSize'
+                }
+            }
+        ]
+    }
+    worksheet.spreadsheet.batch_update(requests_body)
     time.sleep(REQUEST_DELAY)
     
     if num_rows > 1:
@@ -259,11 +331,11 @@ def update_sheets(records):
                 strain_escaped = record["strain"].replace('"', '""')
                 formula = f'=HYPERLINK("{record["link"]}","{strain_escaped}")'
                 current_ws.update(
-                    f'A{i}',
-                    [[formula]],
+                    values=[[formula]],
+                    range_name=f'A{i}',
                     value_input_option='USER_ENTERED'
                 )
-                time.sleep(0.15)  # Small delay between updates
+                time.sleep(1.2)  # Increase delay to avoid rate limits
         time.sleep(REQUEST_DELAY)
         
     # Apply formatting
@@ -306,20 +378,20 @@ def update_sheets(records):
         time.sleep(REQUEST_DELAY)
         
         # Add hyperlinks to strain names in changelog
-        print("Adding hyperlinks to changelog...")
+        print(f"Adding hyperlinks to {len(changelog_rows)} changelog entries...")
         for i, row in enumerate(changelog_rows, start=current_row_count + 1):
             strain_name = row[2]  # Strain is column C (index 2)
             link_url = row[3]     # Link is column D (index 3)
             
-            if link_url:
+            if link_url and strain_name:
                 strain_escaped = strain_name.replace('"', '""')
                 formula = f'=HYPERLINK("{link_url}","{strain_escaped}")'
                 changelog_ws.update(
-                    f'C{i}',
-                    [[formula]],
+                    values=[[formula]],
+                    range_name=f'C{i}',
                     value_input_option='USER_ENTERED'
                 )
-                time.sleep(0.15)
+                time.sleep(1.2)  # Increase delay to avoid rate limits
         
         time.sleep(REQUEST_DELAY)
         
@@ -332,8 +404,20 @@ def update_sheets(records):
         })
         time.sleep(REQUEST_DELAY)
         
-        # Auto-resize columns
-        changelog_ws.columns_auto_resize(0, 6)
+        # Set changelog column widths
+        print("Resizing changelog columns...")
+        requests_body = {
+            'requests': [
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 0, 'endIndex': 1}, 'properties': {'pixelSize': 180}, 'fields': 'pixelSize'}},  # Timestamp
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 1, 'endIndex': 2}, 'properties': {'pixelSize': 120}, 'fields': 'pixelSize'}},  # Change Type
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 2, 'endIndex': 3}, 'properties': {'pixelSize': 200}, 'fields': 'pixelSize'}},  # Strain
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 3, 'endIndex': 4}, 'properties': {'pixelSize': 80}, 'fields': 'pixelSize'}},   # Link
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 4, 'endIndex': 5}, 'properties': {'pixelSize': 100}, 'fields': 'pixelSize'}},  # Field
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 5, 'endIndex': 6}, 'properties': {'pixelSize': 100}, 'fields': 'pixelSize'}},  # Old Value
+                {'updateDimensionProperties': {'range': {'sheetId': changelog_ws.id, 'dimension': 'COLUMNS', 'startIndex': 6, 'endIndex': 7}, 'properties': {'pixelSize': 100}, 'fields': 'pixelSize'}},  # New Value
+            ]
+        }
+        changelog_ws.spreadsheet.batch_update(requests_body)
         time.sleep(REQUEST_DELAY)
 
 # ---------------- main ----------------
