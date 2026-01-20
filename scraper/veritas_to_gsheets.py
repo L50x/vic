@@ -5,11 +5,15 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+import time
 
 URL = "https://veritasthca.com/2023/06/17/live-rosin-menu/"
 SPREADSHEET_ID = "17goBwXxZlBoLlOa9astP6uWdF5YS0wBB9mvLN1whaoI"
 
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets"]
+
+# Rate limiting: 60 write requests per minute = 1 request per second safe rate
+REQUEST_DELAY = 1.5  # seconds between requests
 
 # ---------------- auth ----------------
 
@@ -29,6 +33,8 @@ except gspread.WorksheetNotFound:
     except gspread.WorksheetNotFound:
         changelog_ws = sh.add_worksheet("Changelog", rows=1000, cols=10)
 
+time.sleep(REQUEST_DELAY)
+
 try:
     current_ws = sh.worksheet("current_menu")
     current_ws.update_title("Current Menu")
@@ -38,7 +44,10 @@ except gspread.WorksheetNotFound:
     except gspread.WorksheetNotFound:
         current_ws = sh.add_worksheet("Current Menu", rows=1000, cols=10)
 
+time.sleep(REQUEST_DELAY)
+
 sh.reorder_worksheets([changelog_ws, current_ws])
+time.sleep(REQUEST_DELAY)
 
 # ---------------- helpers ----------------
 
@@ -112,125 +121,60 @@ def fetch_menu():
 
 # ---------------- formatting ----------------
 
-def format_sheet(worksheet, num_rows):
-    """Apply formatting to make the sheet look better"""
+def format_sheet_simple(worksheet, num_rows):
+    """Apply simple formatting without conditional coloring to avoid rate limits"""
     
-    # Build all format requests at once
-    formats = []
-    
-    # Freeze header row
+    print("Freezing header row...")
     worksheet.freeze(rows=1)
+    time.sleep(REQUEST_DELAY)
     
-    # Format header row - bold, background color, text color
-    formats.append({
-        'range': 'A1:E1',
-        'format': {
-            "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
-            "textFormat": {
-                "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
-                "fontSize": 11,
-                "bold": True
-            },
-            "horizontalAlignment": "CENTER"
-        }
+    print("Formatting header...")
+    worksheet.format('A1:E1', {
+        "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
+        "textFormat": {
+            "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+            "fontSize": 11,
+            "bold": True
+        },
+        "horizontalAlignment": "CENTER"
     })
+    time.sleep(REQUEST_DELAY)
     
-    # Auto-resize columns
+    print("Auto-resizing columns...")
     worksheet.columns_auto_resize(0, 4)
+    time.sleep(REQUEST_DELAY)
     
     if num_rows > 1:
-        # Read all stock values at once to determine formatting
-        stock_values = worksheet.batch_get([f'B2:B{num_rows}'])[0]
+        print("Centering stock column...")
+        worksheet.format(f'B2:B{num_rows}', {
+            "horizontalAlignment": "CENTER"
+        })
+        time.sleep(REQUEST_DELAY)
         
-        # Build ranges for each format type
-        sold_out_ranges = []
-        low_stock_ranges = []
-        normal_stock_ranges = []
+        print("Centering tier column...")
+        worksheet.format(f'C2:C{num_rows}', {
+            "horizontalAlignment": "CENTER"
+        })
+        time.sleep(REQUEST_DELAY)
         
-        for row_num, cell_data in enumerate(stock_values, start=2):
-            if not cell_data:
-                continue
-            cell_value = cell_data[0] if cell_data else ""
-            
-            if cell_value == "SOLD OUT":
-                sold_out_ranges.append(f'B{row_num}')
-            elif cell_value and 'g' in str(cell_value):
-                try:
-                    stock_num = int(str(cell_value).replace('g', ''))
-                    if 1 <= stock_num <= 20:
-                        low_stock_ranges.append(f'B{row_num}')
-                    else:
-                        normal_stock_ranges.append(f'B{row_num}')
-                except:
-                    normal_stock_ranges.append(f'B{row_num}')
-        
-        # Add format for sold out cells
-        if sold_out_ranges:
-            for cell_range in sold_out_ranges:
-                formats.append({
-                    'range': cell_range,
-                    'format': {
-                        "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
-                        "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0.0, "blue": 0.0}},
-                        "horizontalAlignment": "CENTER"
-                    }
-                })
-        
-        # Add format for low stock cells
-        if low_stock_ranges:
-            for cell_range in low_stock_ranges:
-                formats.append({
-                    'range': cell_range,
-                    'format': {
-                        "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8},
-                        "horizontalAlignment": "CENTER"
-                    }
-                })
-        
-        # Add format for normal stock cells
-        if normal_stock_ranges:
-            for cell_range in normal_stock_ranges:
-                formats.append({
-                    'range': cell_range,
-                    'format': {
-                        "horizontalAlignment": "CENTER"
-                    }
-                })
-        
-        # Center align tier column
-        formats.append({
-            'range': f'C2:C{num_rows}',
-            'format': {
-                "horizontalAlignment": "CENTER"
+        print("Formatting strain links...")
+        worksheet.format(f'A2:A{num_rows}', {
+            "textFormat": {
+                "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
+                "underline": True
             }
         })
+        time.sleep(REQUEST_DELAY)
         
-        # Format strain column (A) as blue hyperlinks
-        formats.append({
-            'range': f'A2:A{num_rows}',
-            'format': {
-                "textFormat": {
-                    "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
-                    "underline": True
-                }
-            }
+        print("Formatting prices...")
+        worksheet.format(f'D2:D{num_rows}', {
+            "numberFormat": {
+                "type": "CURRENCY",
+                "pattern": "$#,##0.00"
+            },
+            "horizontalAlignment": "CENTER"
         })
-        
-        # Format price as currency
-        formats.append({
-            'range': f'D2:D{num_rows}',
-            'format': {
-                "numberFormat": {
-                    "type": "CURRENCY",
-                    "pattern": "$#,##0.00"
-                },
-                "horizontalAlignment": "CENTER"
-            }
-        })
-    
-    # Apply all formats in one batch request
-    if formats:
-        worksheet.batch_format(formats)
+        time.sleep(REQUEST_DELAY)
 
 # ---------------- gsheets sync ----------------
 
@@ -238,10 +182,13 @@ def update_sheets(records):
     timestamp = datetime.utcnow().isoformat()
 
     # Get old data
+    print("Reading existing data...")
     try:
         old_data = current_ws.get_all_records()
     except Exception:
         old_data = []
+    
+    time.sleep(REQUEST_DELAY)
 
     old_dict = {r.get("id", ""): r for r in old_data if r.get("id")}
     new_dict = {r["id"]: r for r in records}
@@ -277,17 +224,21 @@ def update_sheets(records):
                 ])
 
     # Overwrite current menu
+    print("Clearing current menu...")
     current_ws.clear()
+    time.sleep(REQUEST_DELAY)
     
-    # Write headers (removed ID, Section, Sold Out, Link)
+    # Write headers
     headers = ["Strain", "Stock", "Tier", "Price", "Last Seen"]
+    print("Writing headers...")
     current_ws.append_row(headers)
+    time.sleep(REQUEST_DELAY)
     
     # Write data rows
     data_rows = []
     for record in records:
         row = [
-            record["strain"],  # Will be converted to hyperlink below
+            record["strain"],
             record["stock"],
             record["tier"],
             record["price"],
@@ -296,32 +247,44 @@ def update_sheets(records):
         data_rows.append(row)
     
     if data_rows:
+        print(f"Writing {len(data_rows)} rows...")
         current_ws.append_rows(data_rows)
+        time.sleep(REQUEST_DELAY)
         
         # Batch update strain names to hyperlinks
+        print("Creating hyperlinks...")
         batch_data = []
-        for i, record in enumerate(records, start=2):  # Start at row 2 (after header)
+        for i, record in enumerate(records, start=2):
             if record["link"]:
                 batch_data.append({
                     'range': f'A{i}',
-                    'values': [[f'=HYPERLINK("{record["link"]}", "{record["strain"]}")']]
+                    'values': [[f'=HYPERLINK("{record["link"]}","{record["strain"]}")']]
                 })
         
-        # Update all hyperlinks in one batch request
         if batch_data:
-            current_ws.batch_update(batch_data)
+            # Use value_input_option='USER_ENTERED' to interpret formulas
+            for item in batch_data:
+                current_ws.update(
+                    item['range'],
+                    item['values'],
+                    value_input_option='USER_ENTERED'
+                )
+                time.sleep(REQUEST_DELAY)
         
     # Apply formatting
-    format_sheet(current_ws, len(data_rows) + 1)
+    print("Applying formatting...")
+    format_sheet_simple(current_ws, len(data_rows) + 1)
 
     # Append changelog
     if changelog_rows:
+        print("Updating changelog...")
         if not changelog_ws.get_all_values():
             changelog_ws.append_row([
                 "Timestamp", "Change Type", "Strain",
                 "Link", "Field", "Old Value", "New Value"
             ])
-            # Format changelog header
+            time.sleep(REQUEST_DELAY)
+            
             changelog_ws.format('A1:G1', {
                 "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
                 "textFormat": {
@@ -331,18 +294,28 @@ def update_sheets(records):
                 },
                 "horizontalAlignment": "CENTER"
             })
+            time.sleep(REQUEST_DELAY)
+            
             changelog_ws.freeze(rows=1)
+            time.sleep(REQUEST_DELAY)
             
         changelog_ws.append_rows(changelog_rows)
+        time.sleep(REQUEST_DELAY)
+        
         changelog_ws.columns_auto_resize(0, 6)
+        time.sleep(REQUEST_DELAY)
 
 # ---------------- main ----------------
 
 def main():
+    print("Fetching menu from website...")
     records = fetch_menu()
     print(f"Fetched {len(records)} menu items")
+    
+    print("Updating Google Sheets...")
     update_sheets(records)
-    print("Successfully updated spreadsheet with formatting!")
+    
+    print("✅ Successfully updated spreadsheet!")
 
 if __name__ == "__main__":
     main()
