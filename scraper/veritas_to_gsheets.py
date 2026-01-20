@@ -5,6 +5,7 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 import gspread
 from google.oauth2.service_account import Credentials
+import numpy as np
 
 URL = "https://veritasthca.com/2023/06/17/live-rosin-menu/"
 SPREADSHEET_ID = "17goBwXxZlBoLlOa9astP6uWdF5YS0wBB9mvLN1whaoI"
@@ -39,17 +40,17 @@ def clean_text(el):
 
 def parse_grams(text):
     if not text:
-        return None
+        return 0
     if "SOLD OUT" in text.upper():
         return 0
     m = re.search(r"(\d+)", text)
-    return int(m.group(1)) if m else None
+    return int(m.group(1)) if m else 0
 
 def parse_price(text):
     if not text:
-        return None
+        return 0.0
     m = re.search(r"\$([\d.]+)", text)
-    return float(m.group(1)) if m else None
+    return float(m.group(1)) if m else 0.0
 
 # ---------------- scrape ----------------
 
@@ -66,15 +67,17 @@ def fetch_menu():
         if not cells:
             continue
 
-        if len(cells) == 1 and "Tier" in clean_text(cells[0]):
+        # Check if this is a section header
+        if len(cells) == 1 or (len(cells) > 0 and "Tier" in clean_text(cells[0]) and clean_text(cells[1]) in ["", "Tier", "Tier Level"]):
             current_section = clean_text(cells[0])
             continue
 
         name_cell = cells[0]
         name = clean_text(name_cell)
-        link = name_cell.find("a")["href"] if name_cell.find("a") else None
+        link = name_cell.find("a")["href"] if name_cell.find("a") else ""
 
-        if not name:
+        # Skip header rows and empty rows
+        if not name or name.lower() in ["name", "strain"]:
             continue
 
         tier = clean_text(cells[1]) if len(cells) > 1 else ""
@@ -85,98 +88,90 @@ def fetch_menu():
         price = parse_price(price_text)
 
         records.append({
-            "id": f"{current_section}|{tier}|{name}".lower(),
+            "id": f"{current_section}|{tier}|{name}".lower().replace(" ", "_"),
             "section": current_section,
             "strain": name,
             "tier": tier,
             "stock": stock,
-            "sold_out": stock == 0,
+            "sold_out": "true" if stock == 0 else "false",
             "price": price,
             "link": link,
             "last_seen": datetime.utcnow().isoformat()
         })
 
-    df = pd.DataFrame(records)
-    
-    # Replace NaN/None with empty strings for JSON compatibility
-    df = df.fillna("")
-    
-    return df
+    return records
 
 # ---------------- gsheets sync ----------------
 
-def update_sheets(new_df):
+def update_sheets(records):
     timestamp = datetime.utcnow().isoformat()
 
+    # Get old data
     try:
-        old_df = pd.DataFrame(current_ws.get_all_records())
+        old_data = current_ws.get_all_records()
     except Exception:
-        old_df = pd.DataFrame()
+        old_data = []
 
-    # write headers if empty
-    if current_ws.row_count == 0 or not current_ws.get_all_values():
-        current_ws.append_row(list(new_df.columns))
-
-    old_df = old_df.set_index("id") if not old_df.empty else old_df
-    new_df = new_df.set_index("id")
+    old_dict = {r["id"]: r for r in old_data if "id" in r}
+    new_dict = {r["id"]: r for r in records}
 
     changelog_rows = []
 
-    # NEW
-    for idx in new_df.index.difference(old_df.index):
-        r = new_df.loc[idx]
-        changelog_rows.append([
-            timestamp, "NEW_ITEM", r.strain, r.link if r.link else "", "", "", ""
-        ])
+    # NEW items
+    for item_id, item in new_dict.items():
+        if item_id not in old_dict:
+            changelog_rows.append([
+                timestamp, "NEW_ITEM", item["strain"], item["link"], "", "", ""
+            ])
 
-    # REMOVED
-    for idx in old_df.index.difference(new_df.index):
-        r = old_df.loc[idx]
-        link = r.get("link") if isinstance(r.get("link"), str) else ""
-        changelog_rows.append([
-            timestamp, "REMOVED", r.strain, link, "", "", ""
-        ])
+    # REMOVED items
+    for item_id, item in old_dict.items():
+        if item_id not in new_dict:
+            changelog_rows.append([
+                timestamp, "REMOVED", item["strain"], item.get("link", ""), "", "", ""
+            ])
 
-    # CHANGES
-    for idx in new_df.index.intersection(old_df.index):
-        o, n = old_df.loc[idx], new_df.loc[idx]
+    # CHANGED items
+    for item_id in set(old_dict.keys()) & set(new_dict.keys()):
+        old_item = old_dict[item_id]
+        new_item = new_dict[item_id]
+        
         for field in ["stock", "price", "sold_out"]:
-            old_val = o[field] if o[field] != "" else None
-            new_val = n[field] if n[field] != "" else None
+            old_val = str(old_item.get(field, ""))
+            new_val = str(new_item.get(field, ""))
             if old_val != new_val:
                 changelog_rows.append([
-                    timestamp, "FIELD_CHANGE", n.strain, 
-                    n.link if n.link else "",
-                    field, str(old_val), str(new_val)
+                    timestamp, "FIELD_CHANGE", new_item["strain"],
+                    new_item["link"], field, old_val, new_val
                 ])
 
-    # overwrite current menu
+    # Overwrite current menu
     current_ws.clear()
-    current_ws.append_row(list(new_df.reset_index().columns))
     
-    # Convert dataframe to list and ensure all values are JSON-safe
-    df_reset = new_df.reset_index()
-    rows_data = []
-    for _, row in df_reset.iterrows():
-        clean_row = []
-        for val in row:
-            # Handle different data types
-            if pd.isna(val) or val == "":
-                clean_row.append("")
-            elif isinstance(val, bool):
-                clean_row.append(str(val))
-            elif isinstance(val, (int, float)):
-                if pd.isna(val):
-                    clean_row.append("")
-                else:
-                    clean_row.append(val)
-            else:
-                clean_row.append(str(val))
-        rows_data.append(clean_row)
+    # Write headers
+    headers = ["id", "section", "strain", "tier", "stock", "sold_out", "price", "link", "last_seen"]
+    current_ws.append_row(headers)
     
-    current_ws.append_rows(rows_data)
+    # Write data rows
+    data_rows = []
+    for record in records:
+        row = [
+            record["id"],
+            record["section"],
+            record["strain"],
+            record["tier"],
+            record["stock"],
+            record["sold_out"],
+            record["price"],
+            record["link"],
+            record["last_seen"]
+        ]
+        data_rows.append(row)
+    
+    if data_rows:
+        current_ws.append_rows(data_rows)
 
-    # append changelog
+    # Append changelog
     if changelog_rows:
         if not changelog_ws.get_all_values():
             changelog_ws.append_row([
@@ -188,8 +183,9 @@ def update_sheets(new_df):
 # ---------------- main ----------------
 
 def main():
-    df = fetch_menu()
-    update_sheets(df)
+    records = fetch_menu()
+    print(f"Fetched {len(records)} menu items")
+    update_sheets(records)
     print("Successfully updated spreadsheet!")
 
 if __name__ == "__main__":
