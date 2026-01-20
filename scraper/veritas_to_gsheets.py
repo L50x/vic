@@ -387,7 +387,6 @@ def update_sheets(records):
     
     # Append changelog entries if there are any changes
     if changelog_rows:
-    if changelog_rows:
         # Get the current row count
         current_row_count = len(changelog_ws.get_all_values())
         
