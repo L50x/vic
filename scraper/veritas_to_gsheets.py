@@ -360,30 +360,33 @@ def update_sheets(records):
     print("Applying formatting...")
     format_sheet_dynamic(current_ws, headers, data_rows)
 
-    # Append changelog
+    # Update changelog
+    print("Updating changelog...")
+    existing_changelog = changelog_ws.get_all_values()
+    
+    changelog_headers = ["Strain", "Status", "Timestamp"]
+    
+    # Always ensure headers are present and formatted
+    if not existing_changelog:
+        # Clear and add header row
+        changelog_ws.clear()
+        changelog_ws.append_row(changelog_headers)
+        
+        # Format changelog header to match current menu
+        changelog_ws.format('A1:C1', {
+            "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
+            "textFormat": {
+                "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                "fontSize": 11,
+                "bold": True
+            },
+            "horizontalAlignment": "CENTER"
+        })
+        
+        changelog_ws.freeze(rows=1)
+    
     if changelog_rows:
-        print("Updating changelog...")
-        existing_changelog = changelog_ws.get_all_values()
-        
-        changelog_headers = ["Strain", "Status", "Timestamp"]
-        
-        if not existing_changelog:
-            # Add header row
-            changelog_ws.append_row(changelog_headers)
-            
-            # Format changelog header to match current menu
-            changelog_ws.format('A1:C1', {
-                "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
-                "textFormat": {
-                    "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
-                    "fontSize": 11,
-                    "bold": True
-                },
-                "horizontalAlignment": "CENTER"
-            })
-            
-            changelog_ws.freeze(rows=1)
-        
+    if changelog_rows:
         # Get the current row count
         current_row_count = len(changelog_ws.get_all_values())
         
