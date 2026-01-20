@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Veritas Live Menu</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<header>
+  <h1>Veritas Live Inventory</h1>
+  <nav>
+    <button onclick="showTab('changelog')">Changelog</button>
+    <button onclick="showTab('menu')">Current Menu</button>
+  </nav>
+</header>
+
+<section id="changelog" class="tab active">
+  <h2>Changelog</h2>
+  <table id="changelog-table"></table>
+</section>
+
+<section id="menu" class="tab">
+  <h2>Current Menu</h2>
+  <table id="menu-table"></table>
+</section>
+
+<script src="app.js"></script>
+</body>
+</html>
