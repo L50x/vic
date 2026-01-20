@@ -17,20 +17,11 @@ jobs:
         run: |
           pip install requests beautifulsoup4 pandas gspread google-auth
       - name: Write Google credentials
+        env:
+          GSHEETS_CREDS: ${{ secrets.GSHEETS_CREDENTIALS }}
         run: |
           mkdir -p scraper
-          echo '${{ secrets.GSHEETS_CREDENTIALS }}' > scraper/credentials.json
-      - name: Debug credentials file
-        run: |
-          echo "File exists:"
-          ls -la scraper/credentials.json
-          echo "File size:"
-          wc -c scraper/credentials.json
-          echo "First 200 characters:"
-          head -c 200 scraper/credentials.json
-          echo ""
-          echo "Checking JSON validity:"
-          python -m json.tool scraper/credentials.json > /dev/null && echo "JSON is valid" || echo "JSON is INVALID"
+          echo "$GSHEETS_CREDS" > scraper/credentials.json
       - name: Run scraper
         run: |
           python scraper/veritas_to_gsheets.py
