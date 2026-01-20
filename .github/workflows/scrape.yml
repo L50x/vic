@@ -21,7 +21,7 @@ jobs:
           GSHEETS_CREDENTIALS: ${{ secrets.GSHEETS_CREDENTIALS }}
         run: |
           mkdir -p scraper
-          echo "$GSHEETS_CREDENTIALS" > scraper/credentials.json
+          python -c "import os, json; open('scraper/credentials.json', 'w').write(os.environ['GSHEETS_CREDENTIALS'])"
       - name: Run scraper
         run: |
           python scraper/veritas_to_gsheets.py
