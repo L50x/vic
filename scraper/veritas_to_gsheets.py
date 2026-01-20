@@ -273,13 +273,17 @@ def update_sheets(records):
     # Append changelog
     if changelog_rows:
         print("Updating changelog...")
-        if not changelog_ws.get_all_values():
+        existing_changelog = changelog_ws.get_all_values()
+        
+        if not existing_changelog:
+            # Add header row
             changelog_ws.append_row([
                 "Timestamp", "Change Type", "Strain",
                 "Link", "Field", "Old Value", "New Value"
             ])
             time.sleep(REQUEST_DELAY)
             
+            # Format changelog header to match current menu
             changelog_ws.format('A1:G1', {
                 "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
                 "textFormat": {
@@ -293,10 +297,42 @@ def update_sheets(records):
             
             changelog_ws.freeze(rows=1)
             time.sleep(REQUEST_DELAY)
-            
+        
+        # Get the current row count to know where to add hyperlinks
+        current_row_count = len(changelog_ws.get_all_values())
+        
+        # Append the changelog rows
         changelog_ws.append_rows(changelog_rows)
         time.sleep(REQUEST_DELAY)
         
+        # Add hyperlinks to strain names in changelog
+        print("Adding hyperlinks to changelog...")
+        for i, row in enumerate(changelog_rows, start=current_row_count + 1):
+            strain_name = row[2]  # Strain is column C (index 2)
+            link_url = row[3]     # Link is column D (index 3)
+            
+            if link_url:
+                strain_escaped = strain_name.replace('"', '""')
+                formula = f'=HYPERLINK("{link_url}","{strain_escaped}")'
+                changelog_ws.update(
+                    f'C{i}',
+                    [[formula]],
+                    value_input_option='USER_ENTERED'
+                )
+                time.sleep(0.15)
+        
+        time.sleep(REQUEST_DELAY)
+        
+        # Format strain column as blue hyperlinks
+        changelog_ws.format(f'C2:C{current_row_count + len(changelog_rows)}', {
+            "textFormat": {
+                "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
+                "underline": True
+            }
+        })
+        time.sleep(REQUEST_DELAY)
+        
+        # Auto-resize columns
         changelog_ws.columns_auto_resize(0, 6)
         time.sleep(REQUEST_DELAY)
 
