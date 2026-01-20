@@ -159,12 +159,17 @@ def is_section_header(cells):
         return False
     
     first_cell_text = clean_text(cells[0]).lower()
+    second_cell_text = clean_text(cells[1]).lower() if len(cells) > 1 else ""
     
-    # Check for explicit tier markers
+    # Check for explicit tier markers in first cell
     if any(marker in first_cell_text for marker in ["tier 1", "tier 2", "tier 3", "tier 4"]):
-        # Make sure it's actually a header and not a data row
-        if len(cells) <= 2 or clean_text(cells[1]).lower() in ["", "tier", "tier level"]:
+        # Make sure second cell is empty or contains tier-related text (not actual data)
+        if second_cell_text in ["", "tier", "tier level", "tier 1", "tier 2", "tier 3"]:
             return True
+    
+    # Additional check: if first cell has strong header indicators like "lab" 
+    if any(indicator in first_cell_text for indicator in ["socal lab", "vegas lab", "lv + oc"]):
+        return True
     
     return False
 
@@ -222,6 +227,11 @@ def fetch_menu():
 
         # Skip header rows and empty rows
         if not raw_name or raw_name.lower() in ["name", "strain"]:
+            continue
+        
+        # Skip rows that look like headers but weren't caught by is_section_header
+        # (e.g., rows with tier markers but no actual strain data)
+        if any(marker in raw_name.lower() for marker in ["tier 1", "tier 2", "tier 3", "tier 4"]) and not link:
             continue
 
         # Normalize strain name
