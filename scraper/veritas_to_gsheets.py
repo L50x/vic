@@ -19,16 +19,24 @@ creds = Credentials.from_service_account_file(
 gc = gspread.authorize(creds)
 sh = gc.open_by_key(SPREADSHEET_ID)
 
-# Ensure sheet order
+# Ensure sheet order and rename sheets
 try:
     changelog_ws = sh.worksheet("changelog")
+    changelog_ws.update_title("Changelog")
 except gspread.WorksheetNotFound:
-    changelog_ws = sh.add_worksheet("changelog", rows=1000, cols=10)
+    try:
+        changelog_ws = sh.worksheet("Changelog")
+    except gspread.WorksheetNotFound:
+        changelog_ws = sh.add_worksheet("Changelog", rows=1000, cols=10)
 
 try:
     current_ws = sh.worksheet("current_menu")
+    current_ws.update_title("Current Menu")
 except gspread.WorksheetNotFound:
-    current_ws = sh.add_worksheet("current_menu", rows=1000, cols=10)
+    try:
+        current_ws = sh.worksheet("Current Menu")
+    except gspread.WorksheetNotFound:
+        current_ws = sh.add_worksheet("Current Menu", rows=1000, cols=10)
 
 sh.reorder_worksheets([changelog_ws, current_ws])
 
@@ -39,11 +47,14 @@ def clean_text(el):
 
 def parse_grams(text):
     if not text:
-        return 0
+        return "SOLD OUT"
     if "SOLD OUT" in text.upper():
-        return 0
+        return "SOLD OUT"
     m = re.search(r"(\d+)", text)
-    return int(m.group(1)) if m else 0
+    if m:
+        grams = int(m.group(1))
+        return "SOLD OUT" if grams == 0 else f"{grams}g"
+    return "SOLD OUT"
 
 def parse_price(text):
     if not text:
@@ -92,7 +103,6 @@ def fetch_menu():
             "strain": name,
             "tier": tier,
             "stock": stock,
-            "sold_out": "true" if stock == 0 else "false",
             "price": price,
             "link": link,
             "last_seen": datetime.utcnow().isoformat()
@@ -109,7 +119,7 @@ def format_sheet(worksheet, num_rows):
     worksheet.freeze(rows=1)
     
     # Format header row - bold, background color, text color
-    worksheet.format('A1:I1', {
+    worksheet.format('A1:E1', {
         "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
         "textFormat": {
             "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
@@ -120,58 +130,52 @@ def format_sheet(worksheet, num_rows):
     })
     
     # Auto-resize columns
-    worksheet.columns_auto_resize(0, 8)
+    worksheet.columns_auto_resize(0, 4)
     
-    # Format sold_out column with conditional colors
     if num_rows > 1:
-        # Red background for "true" (sold out)
-        worksheet.format(f'F2:F{num_rows}', {
-            "backgroundColor": {"red": 1.0, "green": 0.9, "blue": 0.9}
-        }, condition={
-            "type": "TEXT_CONTAINS",
-            "values": [{"userEnteredValue": "true"}]
-        })
+        # Format stock column - red background and bold for "SOLD OUT"
+        for row_num in range(2, num_rows + 1):
+            cell_value = worksheet.cell(row_num, 2).value
+            if cell_value == "SOLD OUT":
+                worksheet.format(f'B{row_num}', {
+                    "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
+                    "textFormat": {"bold": True, "foregroundColor": {"red": 0.8, "green": 0.0, "blue": 0.0}},
+                    "horizontalAlignment": "CENTER"
+                })
+            else:
+                # Yellow background for low stock (contains single digit before 'g')
+                if cell_value and 'g' in str(cell_value):
+                    stock_num = int(str(cell_value).replace('g', ''))
+                    if 1 <= stock_num <= 20:
+                        worksheet.format(f'B{row_num}', {
+                            "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8},
+                            "horizontalAlignment": "CENTER"
+                        })
+                    else:
+                        worksheet.format(f'B{row_num}', {
+                            "horizontalAlignment": "CENTER"
+                        })
         
-        # Green background for "false" (in stock)
-        worksheet.format(f'F2:F{num_rows}', {
-            "backgroundColor": {"red": 0.9, "green": 1.0, "blue": 0.9}
-        }, condition={
-            "type": "TEXT_CONTAINS",
-            "values": [{"userEnteredValue": "false"}]
-        })
-        
-        # Format stock numbers with color coding
-        # Red for 0
-        worksheet.format(f'E2:E{num_rows}', {
-            "backgroundColor": {"red": 1.0, "green": 0.8, "blue": 0.8},
-            "textFormat": {"bold": True}
-        }, condition={
-            "type": "NUMBER_EQ",
-            "values": [{"userEnteredValue": "0"}]
-        })
-        
-        # Yellow for low stock (1-20)
-        worksheet.format(f'E2:E{num_rows}', {
-            "backgroundColor": {"red": 1.0, "green": 1.0, "blue": 0.8}
-        }, condition={
-            "type": "NUMBER_BETWEEN",
-            "values": [
-                {"userEnteredValue": "1"},
-                {"userEnteredValue": "20"}
-            ]
-        })
-        
-        # Center align specific columns
-        worksheet.format(f'D2:G{num_rows}', {
+        # Center align tier and price columns
+        worksheet.format(f'C2:C{num_rows}', {
             "horizontalAlignment": "CENTER"
         })
         
+        # Format strain column (A) as blue hyperlinks
+        worksheet.format(f'A2:A{num_rows}', {
+            "textFormat": {
+                "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
+                "underline": True
+            }
+        })
+        
         # Format price as currency
-        worksheet.format(f'G2:G{num_rows}', {
+        worksheet.format(f'D2:D{num_rows}', {
             "numberFormat": {
                 "type": "CURRENCY",
                 "pattern": "$#,##0.00"
-            }
+            },
+            "horizontalAlignment": "CENTER"
         })
 
 # ---------------- gsheets sync ----------------
@@ -185,7 +189,7 @@ def update_sheets(records):
     except Exception:
         old_data = []
 
-    old_dict = {r["id"]: r for r in old_data if "id" in r}
+    old_dict = {r.get("id", ""): r for r in old_data if r.get("id")}
     new_dict = {r["id"]: r for r in records}
 
     changelog_rows = []
@@ -201,7 +205,7 @@ def update_sheets(records):
     for item_id, item in old_dict.items():
         if item_id not in new_dict:
             changelog_rows.append([
-                timestamp, "REMOVED", item["strain"], item.get("link", ""), "", "", ""
+                timestamp, "REMOVED", item.get("strain", ""), item.get("link", ""), "", "", ""
             ])
 
     # CHANGED items
@@ -209,7 +213,7 @@ def update_sheets(records):
         old_item = old_dict[item_id]
         new_item = new_dict[item_id]
         
-        for field in ["stock", "price", "sold_out"]:
+        for field in ["stock", "price"]:
             old_val = str(old_item.get(field, ""))
             new_val = str(new_item.get(field, ""))
             if old_val != new_val:
@@ -221,28 +225,30 @@ def update_sheets(records):
     # Overwrite current menu
     current_ws.clear()
     
-    # Write headers
-    headers = ["ID", "Section", "Strain", "Tier", "Stock (g)", "Sold Out", "Price", "Link", "Last Seen"]
+    # Write headers (removed ID, Section, Sold Out, Link)
+    headers = ["Strain", "Stock", "Tier", "Price", "Last Seen"]
     current_ws.append_row(headers)
     
     # Write data rows
     data_rows = []
     for record in records:
         row = [
-            record["id"],
-            record["section"],
-            record["strain"],
-            record["tier"],
+            record["strain"],  # Will be converted to hyperlink below
             record["stock"],
-            record["sold_out"],
+            record["tier"],
             record["price"],
-            record["link"],
             record["last_seen"]
         ]
         data_rows.append(row)
     
     if data_rows:
         current_ws.append_rows(data_rows)
+        
+        # Convert strain names to hyperlinks
+        for i, record in enumerate(records, start=2):  # Start at row 2 (after header)
+            if record["link"]:
+                # Use HYPERLINK formula: =HYPERLINK(url, label)
+                current_ws.update_cell(i, 1, f'=HYPERLINK("{record["link"]}", "{record["strain"]}")')
         
     # Apply formatting
     format_sheet(current_ws, len(data_rows) + 1)
