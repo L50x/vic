@@ -21,14 +21,14 @@ sh = gc.open_by_key(SPREADSHEET_ID)
 
 # Ensure sheet order
 try:
-    changelog_ws = sh.worksheet("changelog")
+    changelog_ws = sh.worksheet("Changelog")
 except gspread.WorksheetNotFound:
-    changelog_ws = sh.add_worksheet("changelog", rows=1000, cols=10)
+    changelog_ws = sh.add_worksheet("Changelog", rows=1000, cols=10)
 
 try:
-    current_ws = sh.worksheet("current_menu")
+    current_ws = sh.worksheet("Current Menu")
 except gspread.WorksheetNotFound:
-    current_ws = sh.add_worksheet("current_menu", rows=1000, cols=10)
+    current_ws = sh.add_worksheet("Current Menu", rows=1000, cols=10)
 
 sh.reorder_worksheets([changelog_ws, current_ws])
 
