@@ -489,7 +489,7 @@ def update_sheets(records):
     changelog_headers = ["Strain", "Tier", "Lab", "Status", "Timestamp"]
     
     # Always ensure headers are present and formatted
-    if not existing_changelog:
+    if not existing_changelog or len(existing_changelog) == 0:
         changelog_ws.clear()
         changelog_ws.append_row(changelog_headers)
         
@@ -503,6 +503,20 @@ def update_sheets(records):
             "horizontalAlignment": "CENTER"
         })
         
+        changelog_ws.freeze(rows=1)
+    elif existing_changelog[0] != changelog_headers:
+        # Headers exist but are wrong - fix them
+        print("Fixing changelog headers...")
+        changelog_ws.update('A1:E1', [changelog_headers])
+        changelog_ws.format('A1:E1', {
+            "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
+            "textFormat": {
+                "foregroundColor": {"red": 1.0, "green": 1.0, "blue": 1.0},
+                "fontSize": 11,
+                "bold": True
+            },
+            "horizontalAlignment": "CENTER"
+        })
         changelog_ws.freeze(rows=1)
     
     # Append changelog entries if there are any changes
@@ -562,7 +576,7 @@ def update_sheets(records):
         changelog_ws.append_rows(formatted_changelog, value_input_option='USER_ENTERED')
         
         # Format strain column as blue hyperlinks
-        new_row_count = current_row_count + len(formatted_changelog)
+        new_row_count = len(all_changelog_entries) + 1
         changelog_ws.format(f'A2:A{new_row_count}', {
             "textFormat": {
                 "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
