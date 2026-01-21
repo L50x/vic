@@ -507,7 +507,7 @@ def update_sheets(records):
     elif existing_changelog[0] != changelog_headers:
         # Headers exist but are wrong - fix them
         print("Fixing changelog headers...")
-        changelog_ws.update('A1:E1', [changelog_headers])
+        changelog_ws.update(range_name='A1:E1', values=[changelog_headers])
         changelog_ws.format('A1:E1', {
             "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
             "textFormat": {
@@ -521,8 +521,6 @@ def update_sheets(records):
     
     # Append changelog entries if there are any changes
     if changelog_rows:
-        current_row_count = len(changelog_ws.get_all_values())
-        
         print(f"Preparing {len(changelog_rows)} changelog entries with hyperlinks...")
         formatted_changelog = []
         for row in changelog_rows:
@@ -540,7 +538,7 @@ def update_sheets(records):
             if change_type == "NEW_ITEM":
                 status = f"🆕 NEW ITEM - Stock: {new_val}"
             elif change_type == "REMOVED":
-                status = "🗑️ REMOVED"
+                status = f"🗑️ REMOVED"
             elif change_type == "FIELD_CHANGE":
                 if field == "stock":
                     if new_val == "SOLD OUT":
@@ -568,16 +566,26 @@ def update_sheets(records):
             # Format: [Strain, Tier, Lab, Status, Timestamp]
             formatted_changelog.append([strain_formula, tier, lab, status, timestamp])
         
-        # Sort changelog by timestamp (most recent first)
-        # Extract timestamps and sort in reverse chronological order
+        # Sort changelog entries by timestamp (most recent first)
         formatted_changelog.sort(key=lambda x: x[4], reverse=True)
         
-        # Append the changelog rows with formulas
-        changelog_ws.append_rows(formatted_changelog, value_input_option='USER_ENTERED')
+        # Insert new entries at row 2 (right after header) to keep most recent on top
+        # First, get current data (excluding header)
+        current_changelog_data = changelog_ws.get_all_values()[1:] if len(existing_changelog) > 1 else []
+        
+        # Combine new entries with existing entries
+        all_entries = formatted_changelog + current_changelog_data
+        
+        # Clear everything except header
+        if len(existing_changelog) > 1:
+            changelog_ws.delete_rows(2, len(existing_changelog))
+        
+        # Append all entries (new ones are already at the top)
+        changelog_ws.append_rows(all_entries, value_input_option='USER_ENTERED')
         
         # Format strain column as blue hyperlinks
-        new_row_count = len(all_changelog_entries) + 1
-        changelog_ws.format(f'A2:A{new_row_count}', {
+        total_rows = len(all_entries) + 1
+        changelog_ws.format(f'A2:A{total_rows}', {
             "textFormat": {
                 "foregroundColor": {"red": 0.06, "green": 0.4, "blue": 0.8},
                 "underline": True
