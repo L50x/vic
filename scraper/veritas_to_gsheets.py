@@ -507,7 +507,7 @@ def update_sheets(records):
     elif existing_changelog[0] != changelog_headers:
         # Headers exist but are wrong - fix them
         print("Fixing changelog headers...")
-        changelog_ws.update(range_name='A1:E1', values=[changelog_headers])
+        changelog_ws.update([changelog_headers], 'A1:E1')
         changelog_ws.format('A1:E1', {
             "backgroundColor": {"red": 0.2, "green": 0.2, "blue": 0.2},
             "textFormat": {
