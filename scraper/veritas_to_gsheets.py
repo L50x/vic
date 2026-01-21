@@ -363,7 +363,7 @@ def format_sheet_dynamic(worksheet, headers, data_rows):
 def update_sheets(records):
     timestamp = format_timestamp()
 
-    # Get old data
+    # Get old data from current menu
     print("Reading existing data...")
     try:
         old_data = current_ws.get_all_records()
@@ -373,23 +373,57 @@ def update_sheets(records):
     old_dict = {r.get("id", ""): r for r in old_data if r.get("id")}
     new_dict = {r["id"]: r for r in records}
 
+    # Get existing changelog to avoid duplicates
+    print("Reading existing changelog...")
+    try:
+        existing_changelog = changelog_ws.get_all_values()
+        # Create a set of existing changelog entries (strain + tier + lab + status) to check for duplicates
+        existing_entries = set()
+        if len(existing_changelog) > 1:
+            for row in existing_changelog[1:]:  # Skip header
+                if len(row) >= 4:
+                    # Extract strain name from potential HYPERLINK formula
+                    strain_text = row[0]
+                    if strain_text.startswith('=HYPERLINK'):
+                        # Extract strain name from formula: =HYPERLINK("url","strain_name")
+                        import re
+                        match = re.search(r'=HYPERLINK\(".*?","(.*?)"\)', strain_text)
+                        if match:
+                            strain_text = match.group(1)
+                    
+                    entry_key = f"{strain_text}|{row[1]}|{row[2]}|{row[3]}"
+                    existing_entries.add(entry_key)
+    except Exception as e:
+        print(f"  Warning: Could not read existing changelog: {e}")
+        existing_entries = set()
+        existing_changelog = []
+
     changelog_rows = []
 
     # NEW items
     for item_id, item in new_dict.items():
         if item_id not in old_dict:
-            changelog_rows.append([
-                timestamp, "NEW_ITEM", item["strain"], item["link"], 
-                item["tier"], item["lab"], "", "", item["stock"]
-            ])
+            status = f"🆕 NEW ITEM - Stock: {item['stock']}"
+            entry_key = f"{item['strain']}|{item['tier']}|{item['lab']}|{status}"
+            
+            # Only add if this exact entry doesn't already exist in changelog
+            if entry_key not in existing_entries:
+                changelog_rows.append([
+                    timestamp, "NEW_ITEM", item["strain"], item["link"], 
+                    item["tier"], item["lab"], "", "", item["stock"]
+                ])
 
     # REMOVED items
     for item_id, item in old_dict.items():
         if item_id not in new_dict:
-            changelog_rows.append([
-                timestamp, "REMOVED", item.get("strain", ""), item.get("link", ""),
-                item.get("tier", ""), item.get("lab", ""), "", "", ""
-            ])
+            status = "🗑️ REMOVED"
+            entry_key = f"{item.get('strain', '')}|{item.get('tier', '')}|{item.get('lab', '')}|{status}"
+            
+            if entry_key not in existing_entries:
+                changelog_rows.append([
+                    timestamp, "REMOVED", item.get("strain", ""), item.get("link", ""),
+                    item.get("tier", ""), item.get("lab", ""), "", "", ""
+                ])
 
     # CHANGED items
     for item_id in set(old_dict.keys()) & set(new_dict.keys()):
@@ -414,11 +448,29 @@ def update_sheets(records):
                 new_val_normalized = new_val
             
             if old_val_normalized != new_val_normalized:
-                changelog_rows.append([
-                    timestamp, "FIELD_CHANGE", new_item["strain"],
-                    new_item["link"], new_item["tier"], new_item["lab"],
-                    field, old_val, new_val
-                ])
+                # Create the status message
+                if field == "stock":
+                    if new_val == "SOLD OUT":
+                        status = f"⛔ SOLD OUT (was {old_val})"
+                    elif old_val == "SOLD OUT":
+                        status = f"✅ BACK IN STOCK - {new_val}"
+                    else:
+                        status = f"📊 STOCK: {old_val} → {new_val}"
+                elif field == "price":
+                    status = f"💰 PRICE: ${old_val} → ${new_val}"
+                elif field == "moq":
+                    status = f"📦 MOQ: {old_val} → {new_val}"
+                else:
+                    status = f"{field.upper()}: {old_val} → {new_val}"
+                
+                entry_key = f"{new_item['strain']}|{new_item['tier']}|{new_item['lab']}|{status}"
+                
+                if entry_key not in existing_entries:
+                    changelog_rows.append([
+                        timestamp, "FIELD_CHANGE", new_item["strain"],
+                        new_item["link"], new_item["tier"], new_item["lab"],
+                        field, old_val, new_val
+                    ])
 
     # Overwrite current menu
     print("Clearing current menu...")
@@ -484,7 +536,6 @@ def update_sheets(records):
 
     # Update changelog
     print("Updating changelog...")
-    existing_changelog = changelog_ws.get_all_values()
     
     changelog_headers = ["Strain", "Tier", "Lab", "Status", "Timestamp"]
     
